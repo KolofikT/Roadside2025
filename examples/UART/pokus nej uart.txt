@@ -1,0 +1,35 @@
+#include <Arduino.h>
+#include "robotka.h"
+#include "smart_servo_command.h"
+#include "uart_commands.h"
+
+typedef struct __attribute__((packed)) {
+    uint8_t  id;
+    int16_t  value;
+} ServoMsg;
+
+void setup() {
+    rkConfig cfg;
+    rkSetup(cfg);
+
+    rkLedRed(true);
+    rkLedBlue(true);
+    printf("Robotka started!\n");
+
+    uartInit(); // Inicializace UART2 (Serial2)
+    auto& bus = rkSmartServoBus(2);
+    s_s_init(bus, 1, 0, 239);
+    s_s_init(bus, 0, 70, 220);
+    printf("Servo 0 je na pozici %f stupnu\n", bus.pos(0).deg());
+    printf("Servo 1 je na pozici %f stupnu\n", bus.pos(1).deg());
+    printf("done\n");
+}
+
+void loop() {
+    static auto& bus = rkSmartServoBus(2);
+    ServoMsg msg;
+    if (uartReceiveStruct(msg)) {
+        printf("Received struct: ID: %d, Value: %d\n", msg.id, msg.value);
+        s_s_soft_move(bus, msg.id, msg.value, 50.0);
+    }
+}

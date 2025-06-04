@@ -1,0 +1,276 @@
+#include <Arduino.h>
+#include "robotka.h"
+#include "smart_servo_command.h"
+#include "motor_commands.h"
+
+#include <iostream>
+#include <vector>
+#include <string>
+#include <stdexcept>
+#include <algorithm> // pro std::min_element
+#include <climits>   // pro INT_MAX
+
+
+    // Baterie:
+    //    Row1: 7ks   420mm výška 60mm (100mm i s kroužkem)
+    //    Row2: 7ks   420mm výška 60mm (100mm i s kroužkem)
+    // 
+    // Cesta:
+    //    Šířka:  400mm
+    //    Délka:  2000mm
+    //
+    // Dock:
+    //    120 * 120 * 80mm
+    //    120mm od zdi
+    //    75mm mezi docky
+    //
+    //    1.  dock  800mm     od zdi
+    //    2.  dock  995mm     od zdi
+    //    3.  dock  1190mm    od zdi
+    //    4.  dock  1385mm    od zdi
+    //    5.  dock  1580mm    od zdi
+    //    6.  dock  1775mm    od zdi
+    //    7.  dock  1970mm    od zdi
+    //    8.  dock  2165mm    od zdi
+
+
+
+using namespace lx16a; // aby nebylo třeba to psát všude
+
+// Enum pro barvu docks
+enum class Color {
+    NON,
+    RED,
+    BLUE
+};
+
+// Enum pro status docks
+enum class Status {
+    FILLED,
+    EMPTY,
+    ENEMY
+};
+
+// Třída reprezentující jeden dock
+class Dock {
+private:
+    int absolute_pos; // vzdálenost od zdi v mm
+    Color color;
+    Status status;
+
+public:
+    // Konstruktor
+    Dock(int pos = 0, Color c = Color::NON, Status s = Status::EMPTY)
+        : absolute_pos(pos), color(c), status(s) {}
+
+    // Gettery a settery
+    int getAbsolutePos() const { return absolute_pos; }
+    void setAbsolutePos(int pos) { absolute_pos = pos; }
+
+    Color getColor() const { return color; }
+    void setColor(Color c) { color = c; }
+
+    Status getStatus() const { return status; }
+    void setStatus(Status s) { status = s; }
+
+    // Pomocné metody pro výpis
+    std::string colorToString() const {
+        switch(color) {
+            case Color::NON: return "NON";
+            case Color::RED: return "RED";
+            case Color::BLUE: return "BLUE";
+            default: return "UNKNOWN";
+        }
+    }
+
+    std::string statusToString() const {
+        switch(status) {
+            case Status::FILLED: return "FILLED";
+            case Status::EMPTY: return "EMPTY";
+            case Status::ENEMY: return "ENEMY";
+            default: return "UNKNOWN";
+        }
+    }
+
+    // Výpis informací o docku
+    void printInfo() const {
+        std::cout << "Dock: Position=" << absolute_pos << "mm, Color=" 
+                  << colorToString() << ", Status=" << statusToString() << std::endl;
+    }
+};
+
+// Třída pro správu všech docks
+class DockManager {
+private:
+    std::vector<Dock> docks;
+    const int DOCK_COUNT = 8;
+
+public:
+    // Konstruktor - inicializuje 8 docks
+    DockManager() {
+        docks.reserve(DOCK_COUNT);
+        for (int i = 0; i < DOCK_COUNT; ++i) {
+            docks.emplace_back(0, Color::NON, Status::EMPTY);
+        }
+    }
+
+    // Přístup k jednotlivým docks
+    Dock& getDock(int index) {
+        if (index < 0 || index >= DOCK_COUNT) {
+            throw std::out_of_range("Invalid dock index");
+        }
+        return docks[index];
+    }
+
+    const Dock& getDock(int index) const {
+        if (index < 0 || index >= DOCK_COUNT) {
+            throw std::out_of_range("Invalid dock index");
+        }
+        return docks[index];
+    }
+
+    // Výpis informací o všech docích
+    void printAllDocks() const {
+        for (int i = 0; i < DOCK_COUNT; ++i) {
+            std::cout << "Dock " << i << ": ";
+            docks[i].printInfo();
+        }
+    }
+
+    // Počet docks
+    int getDockCount() const {
+        return DOCK_COUNT;
+    }
+
+    int findNearestEmptyDock(int reference_pos) const {
+        int nearest_index = -1;
+        int min_distance = INT_MAX;
+        
+        for (int i = 0; i < DOCK_COUNT; ++i) {
+            if (docks[i].getStatus() == Status::EMPTY) {
+                int distance = abs(docks[i].getAbsolutePos() - reference_pos);
+                if (distance < min_distance) {
+                    min_distance = distance;
+                    nearest_index = i;
+                }
+            }
+        }
+        
+        return nearest_index;
+    }
+};
+
+
+int Robot_position() {};
+
+    auto &bus = rkSmartServoBus(2);
+
+  int load_dock(){
+    s_s_move(bus, 1, 40, 80.0); // levá
+    delay(5000);
+    s_s_move(bus, 0, 120, 80.0); // dole
+    delay(5000);
+    s_s_move(bus, 0, 60, 80.0); // nahoře - aktiv
+    delay(5000);
+    s_s_move(bus, 1, 220, 80.0); // pravá
+    delay(5000);
+    s_s_move(bus, 0, 120, 80.0); // dole
+    delay(5000);
+    s_s_move(bus, 0, 40, 80.0); // nahoře
+    delay(5000); 
+    s_s_move(bus, 1, 120, 80.0); // střed
+
+  }
+
+
+void setup() {
+
+    //Robotka settings
+    rkConfig cfg;
+    rkSetup(cfg);
+
+    printf("Robotka started!\n");
+    pinMode(Bbutton1, INPUT_PULLUP);
+    pinMode(Bbutton2, INPUT_PULLUP);
+    // Pripoj jedni chytre servo s id 0
+    //auto &bus = rkSmartServoBus(1);
+    auto &bus = rkSmartServoBus(2);
+    s_s_init(bus, 1, 40, 220);
+    s_s_init(bus, 0, 40, 125);
+    rkLedRed(true); // Turn on red LED
+    rkLedBlue(true); // Turn on blue LED
+
+
+
+
+    //Roadside settings
+    DockManager manager;
+    
+    //    Nastavení docks:
+
+    //      Nastavení absolutních pozic pro docks:
+    manager.getDock(0).setAbsolutePos(800);
+    manager.getDock(1).setAbsolutePos(995);
+    manager.getDock(2).setAbsolutePos(1190);
+    manager.getDock(3).setAbsolutePos(1385);
+    manager.getDock(4).setAbsolutePos(1580);
+    manager.getDock(5).setAbsolutePos(1775);
+    manager.getDock(6).setAbsolutePos(1970);
+    manager.getDock(7).setAbsolutePos(2165);
+
+
+
+    //    Hledání nejbližšího prázdného docku k pozici 250
+    // int nearest_empty = manager.findNearestEmptyDock(250);
+    
+    // if (nearest_empty != -1) {
+    //     std::cout << "Nejblizsi prazdny dock je cislo " << nearest_empty 
+    //               << " na pozici " << manager.getDock(nearest_empty).getAbsolutePos() 
+    //               << " mm" << std::endl;
+    // } else {
+    //     std::cout << "Neni k dispozici zadny prazdny dock" << std::endl;
+    // }
+
+
+}
+
+void loop() {
+  auto &bus = rkSmartServoBus(2);
+  //auto &bus = rkSmartServoBus(1);
+  if (rkButtonIsPressed(BTN_UP)) {
+      s_s_move(bus, 0, 120, 80.0); // dole
+      delay(5000);
+      s_s_move(bus, 0, 40, 80.0); // nahoře
+      delay(5000);
+      rkServosSetPosition(1, 90); // Servo 1 nastaví na 90°
+      delay(5000);
+      rkServosSetPosition(1, -90); // Servo 1 nastaví na 0°
+  }
+  if (rkButtonIsPressed(BTN_DOWN)) {
+      s_s_move(bus, 1, 220, 80.0); // pravá
+      delay(5000);
+      s_s_move(bus, 1, 40, 80.0); // levá
+      delay(5000);
+      rkServosSetPosition(1, 90); // Servo 1 nastaví na 90°
+      delay(5000);
+      rkServosSetPosition(1, 0); // Servo 1 nastaví na 0°
+
+  }
+  if (rkButtonIsPressed(BTN_ON)) {//nahoru -------------zavirame 0------------ otevreny na 160
+    //forward(1000, 70);
+
+    load_dock();
+  }
+  if (rkButtonIsPressed(BTN_OFF)) {//dolu
+    back_buttons(40);
+  }
+  if ((digitalRead(Bbutton1) == LOW)){
+            rkLedYellow(true); // Turn on red LED
+            rkLedGreen(false); // Turn on red LED
+        }
+  if ((digitalRead(Bbutton2) == LOW)){
+            rkLedGreen(true); // Turn on red LED
+            rkLedYellow(false); // Turn on red LED
+        }
+  delay(50);
+}
