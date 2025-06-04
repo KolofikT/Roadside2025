@@ -348,7 +348,44 @@ void load_dock(int dockIndex) {
 }
 
 /*****************************************************************************************************************************/
+
+//PIXY2 KAMERA
+
+//Globální instance PIXY2 kamery
+Pixy2 pixy;
+
+//Různé funkce pixie kamery jako vzor
+// pixy.ccc.getBlocks();               // Získání bloků z Pixy2 kamery
+
+
+// pixy.ccc.numBlocks;                 // Počet detekovaných bloků
+
+
+// pixy.ccc.blocks[i]                  // Přístup k jednotlivým blokům (i = index bloku)
+
+// pixy.ccc.blocks[i].m_width;         // Šířka bloku
+// pixy.ccc.blocks[i].m_height;        // Výška bloku
+
+// pixy.ccc.blocks[i].m_x;             // X pozice bloku
+// pixy.ccc.blocks[i].m_y;             // Y pozice bloku
+
+// pixy.ccc.blocks[i].m_xTop;         // X pozice horního okraje bloku
+// pixy.ccc.blocks[i].m_yTop;         // Y pozice horního okraje bloku
+// pixy.ccc.blocks[i].m_xBottom;      // X pozice dolního okraje bloku
+// pixy.ccc.blocks[i].m_yBottom;      // Y pozice dolního okraje bloku
+
+// pixy.ccc.blocks[i].m_signature;     // Barva bloku (1 = červená, 2 = modrá, atd.)
+//
+// pixy.ccc.blocks[i].m_angle;         // Úhel bloku (pokud je relevantní)
+// pixy.ccc.blocks[i].m_index;         // Index bloku (pro identifikaci)
+// pixy.ccc.blocks[i].m_age;           // Věk bloku (jak dlouho byl detekován)
+// pixy.ccc.blocks[i].m_xSpeed;        // Rychlost bloku v ose X
+// pixy.ccc.blocks[i].m_ySpeed;        // Rychlost bloku v ose Y
+// pixy.ccc.blocks[i].m_xAccel;       // Zrychlení bloku v ose X
+// pixy.ccc.blocks[i].m_yAccel;       // Zrychlení bloku v ose Y
+
 /*****************************************************************************************************************************/
+
 /*****************************************************************************************************************************/
 /*****************************************************************************************************************************/
 
@@ -375,6 +412,11 @@ void setup() {
     //auto &bus = rkSmartServoBus(1);
     s_s_init(bus, 1, 30, 220);
     s_s_init(bus, 0, 40, 125);
+
+    //Nastavení Pixy2 kamery
+    pixy.init();
+    pixy.changeProg("color_connected_components"); 
+    printf("Pixy2 kamera inicializována!\n");
 
     rkLedRed(true); 
     rkLedBlue(true); 
