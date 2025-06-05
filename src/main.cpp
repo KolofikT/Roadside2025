@@ -3,6 +3,7 @@
 #include "robotka.h"
 #include "smart_servo_command.h"
 #include "motor_commands.h"
+#include "RBCXMotor.h"
 
 //Pixy2 kamera
 #include <Pixy2.h>
@@ -19,6 +20,8 @@
 /***********************************************************************************************************************/
 
 using namespace lx16a; // aby nebylo třeba to psát všude
+
+
 
 /***********************************************************************************************************************/
 
@@ -240,6 +243,109 @@ public:
 // Globální instance sledovače pozice
 PositionTracker positionTracker;
 
+/***********************************************************************************************************************/
+// // PID řízení pro pohyb robota	
+// float M_wheel_circumference = 127.0f * PI; // Průměr kola v mm * PI
+// int32_t MmToTicks(float mm){
+//     return (mm / M_wheel_circumference) * 38.55937f * 48.f;
+// }
+
+// float TicksToMm(int32_t ticks) {
+//     return float(ticks) / 38.55937f / 48.f * M_wheel_circumference;
+// }
+
+// int Odchylka = 0, Integral = 0, Last_odchylka = 0;
+// void zkontroluj_pid(int power, int M1_pos, int M4_pos){
+//         int Max_integral = 1000;
+//         Odchylka = M1_pos - M4_pos;
+//         Integral += Odchylka;
+//         if (Integral >  Max_integral) Integral =  Max_integral;
+//         if (Integral < -Max_integral) Integral = -Max_integral;
+//         int rawPower = power + Odchylka * Kp + Integral * (Ki+2) + (Odchylka - Last_odchylka) * Kd;
+//         // saturace
+//         const int maxPower = 32000;
+//         if      (rawPower >  maxPower) rawPower =  maxPower;
+//         else if (rawPower < -maxPower) rawPower = -maxPower;
+//         auto& man = rb::Manager::get();
+//         Odchylka = M1_pos - M4_pos;
+//         Integral += Odchylka;
+//         man.motor(rb::MotorId::M1).power(-power * 0.9185f);//
+//         man.motor(rb::MotorId::M4).power(rawPower);
+//         Last_odchylka = Odchylka;
+// }
+// ///////////////////
+// int M4_pos = 0;
+// int M1_pos = 0;
+
+// void jed_a_chytej_puky(int distance, bool x, bool kladna = true){
+//   auto& man = rb::Manager::get(); // vytvoří referenci na man class
+//   man.motor(rb::MotorId::M1).setCurrentPosition(0);
+//   man.motor(rb::MotorId::M4).setCurrentPosition(0);
+//   otevreni_prepazky(); // Otevře prepážku
+//   man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) {
+//           M4_pos = info.position();
+//       });
+//   man.motor(rb::MotorId::M1).requestInfo([&](rb::Motor& info) {
+//          M1_pos = -info.position();
+//       });
+
+//   xTaskCreate(ChytejPukyTask, "ChytejPuky", 2048, NULL, 1, &chytejPukyHandle);
+
+//   Serial.printf("musi_jet::: M1_pos: %d, M4_pos: %d\n", MmToTicks(distance), MmToTicks(distance));
+//   setMotorsPower(20000, 20000); // Nastaví motory na 20000
+
+//   while(M4_pos < MmToTicks(distance) && M1_pos < MmToTicks(distance)) {
+//           man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) {
+//               M4_pos = info.position();
+//           });
+//           man.motor(rb::MotorId::M1).requestInfo([&](rb::Motor& info) {
+//              M1_pos = -info.position();
+//           });
+
+//           Serial.printf("[ENCODERY] M4_pos: %d\n", M4_pos);
+
+//           if(M1_pos > 200 && M4_pos > 200) {
+//             zkontroluj_pid(20000, M1_pos, M4_pos);
+//           }
+
+//           if(detekce_soupere()) {
+//            break;
+//           }
+//           delay(10);
+//     }
+//     man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) {
+//               M4_pos = info.position();
+//           });
+//     man.motor(rb::MotorId::M1).requestInfo([&](rb::Motor& info) {
+//              M1_pos = -info.position();
+//           });
+//     Serial.printf("[ENCODERY] M4_pos: %d, M1_pos: %d\n", M4_pos, M1_pos);
+//     if(kladna){
+//       if(x) {
+//         aktualni_pozice.x = aktualni_pozice.x + TicksToMm(M1_pos); // Nastaví aktuální pozici na střed
+//       }
+//       else{
+//         aktualni_pozice.y = aktualni_pozice.y + TicksToMm(M1_pos); // Nastaví aktuální pozici na střed
+//       }
+//     }
+//     else{
+//       if(x) {
+//         aktualni_pozice.x = aktualni_pozice.x - TicksToMm(M1_pos); // Nastaví aktuální pozici na střed
+//       }
+//       else{
+//         aktualni_pozice.y = aktualni_pozice.y - TicksToMm(M1_pos); // Nastaví aktuální pozici na střed
+//       }
+//     }
+//       vTaskDelete(chytejPukyHandle);
+//       chytejPukyHandle = NULL; // Uvolníme task, pokud běžel
+//       setMotorsPower(0, 0); // Zastaví motory
+//       delay(100);
+//       man.motor(rb::MotorId::M1).setCurrentPosition(0);
+//       man.motor(rb::MotorId::M4).setCurrentPosition(0);
+//       M1_pos = 0;
+//       M4_pos = 0;
+// }
+/***********************************************************************************************************************/
 
 // Upravená funkce pro pohyb dopředu s aktualizací pozice robota
 void move_straight_with_tracking(float mm, float speed) {
@@ -322,13 +428,14 @@ void goToAbsolutePosition(int absPos) {
 class RamenoController {
 private:
 
-    int default_speed; // Výchozí rychlost pro serva
+    float default_speed; // Výchozí rychlost pro serva
 
 public:
 
     RamenoController() : default_speed(80) {}
 
-    int set_defaultSmartServosSpeed(float speed)    { return default_speed = speed; }
+    void set_defaultSmartServosSpeed(float speed)   { default_speed = speed; }
+
 
     int get_defaultSmartServosSpeed() const{ return default_speed; }
 
@@ -346,6 +453,23 @@ public:
     void Right(float speed = 80)    { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 215, speed); }       // Rameno - pravá
 
     void Center(float speed = 80)   { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 125, speed); }       // Rameno - střed
+
+    void getColorPosition(float speed = 80) { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 80, speed); } 
+        
+        
+        
+        //int dockIndex, Color color
+        
+        // // Získání absolutní pozice docku
+        // int dockPos = manager.getDockAbsolutePosition(dockIndex);
+        
+        // // Nastavení barvy docku
+        // manager.getDock(dockIndex).setColor(color);
+        
+        // // Výpis informace o barvě a pozici docku
+        // Serial.printf("Dock %d má barvu %s a je na pozici %d mm od zdi.\n", 
+        //               dockIndex, manager.getDock(dockIndex).colorToString().c_str(), dockPos);
+    
 
     // Funkce pro naložení baterie na rameno
     void load_battery(int WaiterIndex, float speed = 80) {
@@ -375,6 +499,7 @@ public:
         delay(WaiterIndex); 
         Magnet(true);
         Center(speed);
+        delay(WaiterIndex);
 
         // Označení docku jako obsazený
         manager.getDock(dockIndex).setStatus(Status::FILLED);
@@ -506,6 +631,8 @@ void setup() {
     rkLedGreen(false);
     rkLedYellow(false);
 
+  
+
     //    Hledání nejbližšího prázdného docku k pozici 250
     // int nearest_empty = manager.findNearestEmptyDock(250);
     
@@ -519,25 +646,58 @@ void setup() {
 
 
 }
-
+  int pos = 50;
 /*****************************************************************************************************************************/
 /*****************************************************************************************************************************/
 
 // Hlavní smyčka programu
 void loop() {
-
+    auto &bus = rkSmartServoBus(2);
   if (rkButtonIsPressed(BTN_UP)) {
-        navigateToDock(0);
-        Rameno.load_dock(0, 3000);
-        goToAbsolutePosition(0);
+    
+    s_s_move(bus, 0, pos, 10);
+    printf("Servo je na pozici %d\n", pos);//80
+    pos++;
+
   }
   if (rkButtonIsPressed(BTN_DOWN)) {
-        move_straight_with_tracking(200, 40);
-        goToAbsolutePosition(0);
+        // move_straight_with_tracking(200, 40);
+        // goToAbsolutePosition(0);
+        printf("Kouká se\n");
+        pixy.ccc.getBlocks();               // Získání bloků z Pixy2 kamery
+        printf("Počet Blocků %d inicializováno\n", pixy.ccc.numBlocks);
+
+        printf("Počet bloků: %d\n", pixy.ccc.numBlocks); // Výpis počtu detekovaných bloků
+
+        if(pixy.ccc.blocks[0].m_signature == 1) { // Pokud je blok červený
+            printf("Červený blok detekován!\n");
+            // Zde můžete přidat další logiku pro zpracování červeného bloku
+        } else if(pixy.ccc.blocks[0].m_signature == 2) { // Pokud je blok modrý
+            printf("Modrý blok detekován!\n");
+            // Zde můžete přidat další logiku pro zpracování modrého bloku
+        } else {
+            printf("Blok s jinou barvou detekován!\n");
+        }
+
+
+
+        // pixy.ccc.blocks[i].m_signature;     // Barva bloku (1 = červená, 2 = modrá, atd.)
+
+        // Procházení detekovaných bloků a jejich výpis
+        // if (pixy.ccc.numBlocks > 0) {
+        //     for (int i = 0; i < pixy.ccc.numBlocks; i++) {
+        //         Serial.printf("Block %d: X=%d, Y=%d, Width=%d, Height=%d, Signature=%d\n", 
+        //                       i, pixy.ccc.blocks[i].m_x, pixy.ccc.blocks[i].m_y, 
+        //                       pixy.ccc.blocks[i].m_width, pixy.ccc.blocks[i].m_height, 
+        //                       pixy.ccc.blocks[i].m_signature);
+        //     }
+        // } else {
+        //     Serial.println("Žádné bloky nebyly detekovány.");
+        // }
     }
   if (rkButtonIsPressed(BTN_ON)) {
-       // move_straight_with_tracking(1000, 40);  // pohyb vpřed s trackingem
-       Rameno.load_battery(3000);
+    // move_straight_with_tracking(1000, 40);  // pohyb vpřed s trackingem
+    //    Rameno.load_battery(3000);
   }
   if (rkButtonIsPressed(BTN_OFF)) {
         //positionTracker.initialize(); // Inicializace pozice robota na 70 mm
@@ -560,6 +720,12 @@ void loop() {
         rkLedYellow(false); // Turn on red LED
 
         Rameno.Right();
+    }
+if(rkButtonIsPressed(BTN_LEFT)) {
+        pixy.ccc.getBlocks();               // Získání bloků z Pixy2 kamery
+
+        Serial.print("Number of blocks: ");
+        Serial.println(pixy.ccc.numBlocks); 
     }
     // Pro jistotu, aby se cyklus neprováděl příliš rychle
   delay(50);
