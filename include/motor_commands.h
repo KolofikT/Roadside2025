@@ -254,3 +254,65 @@ void turn_on_spot(int degrees){
     // Serial.printf("Otáčení na místě o %d stupňů\n", degrees);
     delay(500);
 }
+
+void back_buttons(int speed)
+{
+    int M1_pos = 0, M4_pos = 0, odchylka = 0, integral = 0, last_odchylka = 0;
+    const float Kp = 55.0f;
+    const float Ki = 0.01f;
+    const float Kd = 0.1f;
+    int target = (32000 * speed/100);
+    auto& man = rb::Manager::get();
+    man.motor(rb::MotorId::M1).setCurrentPosition(0);
+    man.motor(rb::MotorId::M4).setCurrentPosition(0);
+    // Zrychlování
+    for(int i = 0; i < target-1; i += a) {
+        odchylka = M1_pos - M4_pos;
+        integral += odchylka;
+        man.motor(rb::MotorId::M1).requestInfo([&](rb::Motor& info) {
+            M1_pos = -info.position();
+        });
+        man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) {
+            M4_pos = info.position();
+        });
+        man.motor(rb::MotorId::M1).power(i * 0.94);
+        man.motor(rb::MotorId::M4).power(-i + odchylka * Kp + integral * Ki + (odchylka - last_odchylka) * Kd);
+        // Serial.printf("[ACCEL] i: %d | M1_pos: %d | M4_pos: %d | odchylka: %d | integral: %d\n", i, M1_pos, M4_pos, odchylka, integral);
+        delay(8);
+    }
+    while (true)
+    {
+        // Získání aktuálních pozic
+        man.motor(rb::MotorId::M1).requestInfo([&](rb::Motor& info) {
+            M1_pos = -info.position();
+        });
+        man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) {
+            M4_pos = info.position();
+        });
+
+        odchylka = M1_pos - M4_pos;
+        integral += odchylka;
+
+        man.motor(rb::MotorId::M1).power(speed * 320);
+        man.motor(rb::MotorId::M4).power(-speed * 320 + odchylka * Kp + integral * Ki + (odchylka - last_odchylka) * Kd);
+
+        // Serial.printf("[BACK] M1_pos: %d | M4_pos: %d | odchylka: %d | integral: %d\n", M1_pos, M4_pos, odchylka, integral);
+
+        last_odchylka = odchylka;
+
+        if ((digitalRead(Bbutton1) == LOW) && (digitalRead(Bbutton2) == LOW)) {
+            break;
+        }
+        delay(50);
+    }
+    delay(150);
+    // Serial.println("Obě Tlačítka STISKNUTY!");
+    rkMotorsSetPower(0, 0);
+}
+
+// Nastaví výkon obou motorů podle zadané hodnoty (-32000 až 32000)
+void setMotorsPower(int powerLeft, int powerRight) {
+    auto& man = rb::Manager::get();
+    man.motor(rb::MotorId::M1).power((-powerRight)* 0.95f);
+    man.motor(rb::MotorId::M4).power(powerLeft);
+}
