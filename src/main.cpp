@@ -272,10 +272,10 @@ void navigateToDock(int dockIndex) {
         
         if (distance > 0) {
             // Robot k docku jede dopředu
-            move_straight_with_tracking(static_cast<float>(abs(distance)), 60.0f); // Pohyb vpřed k docku
+            move_straight_with_tracking(static_cast<float>(abs(distance)), 40.0f); // Pohyb vpřed k docku
         } else if (distance < 0) {
             //Robot k docku couvá
-            move_straight_with_tracking(static_cast<float>(abs(distance)), -60.0f); // Pohyb vzad k docku
+            move_straight_with_tracking(static_cast<float>(abs(distance)), -40.0f); // Pohyb vzad k docku
         } else {
             // Robot je již na správné pozici
             Serial.println("Jsme u cílového docku!");
@@ -292,6 +292,28 @@ void navigateToDock(int dockIndex) {
         Serial.println("Chyba: Neplatný index docku!");
     }
 }
+
+void goToAbsolutePosition(int absPos) {
+
+    // Získání aktuální pozice robota
+    int robotPos = positionTracker.getCurrentPosition();
+            
+    // Výpočet potřebné vzdálenosti
+    int distance = absPos - robotPos;
+            
+    if (distance > 0) {
+        // Robot k docku jede dopředu
+        move_straight_with_tracking(static_cast<float>(abs(distance)), 60.0f); // Pohyb vpřed k docku
+    } else if (distance < 0) {
+        //Robot k docku couvá
+        move_straight_with_tracking(static_cast<float>(abs(distance)), -60.0f); // Pohyb vzad k docku
+    } else {
+        // Robot je již na správné pozici
+        Serial.println("Jsme na cílové pozici!");
+        rkLedGreen(true); // Zapnutí zelené LED
+    }
+}
+
 
 /*****************************************************************************************************************************/
 
@@ -341,7 +363,7 @@ public:
 
     // Funkce pro vyložení baterie z ramene
     void unload_battery(int dockIndex, int WaiterIndex, float speed = 80) {
-        Up(speed);
+        Active(speed);
         delay(WaiterIndex);
         Right(speed);
         delay(WaiterIndex);
@@ -379,6 +401,7 @@ public:
         delay(WaiterIndex); 
         Magnet(true);
         Center(speed);
+        delay(WaiterIndex);
 
         // Označení docku jako obsazený
         manager.getDock(dockIndex).setStatus(Status::FILLED);
@@ -504,10 +527,13 @@ void setup() {
 void loop() {
 
   if (rkButtonIsPressed(BTN_UP)) {
-        Rameno.Up();
+        navigateToDock(0);
+        Rameno.load_dock(0, 3000);
+        goToAbsolutePosition(0);
   }
   if (rkButtonIsPressed(BTN_DOWN)) {
-        Rameno.Down();
+        move_straight_with_tracking(200, 40);
+        goToAbsolutePosition(0);
     }
   if (rkButtonIsPressed(BTN_ON)) {
        // move_straight_with_tracking(1000, 40);  // pohyb vpřed s trackingem
