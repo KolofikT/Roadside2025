@@ -208,7 +208,7 @@ public:
     PositionTracker() : current_position(0), is_initialized(false) {}
 
     // Inicializace pozice robota
-    void initialize(int start_position = 0) {
+    void initialize(int start_position = 65) {
         current_position = start_position;
         is_initialized = true;
     }
@@ -271,9 +271,15 @@ void navigateToDock(int dockIndex) {
         int distance = dockPos - robotPos;
         
         if (distance > 0) {
-            move_straight_with_tracking(static_cast<float>(distance), 60.0f); // Pohyb vpřed k docku
+            // Robot k docku jede dopředu
+            move_straight_with_tracking(static_cast<float>(abs(distance)), 60.0f); // Pohyb vpřed k docku
+        } else if (distance < 0) {
+            //Robot k docku couvá
+            move_straight_with_tracking(static_cast<float>(abs(distance)), -60.0f); // Pohyb vzad k docku
         } else {
+            // Robot je již na správné pozici
             Serial.println("Jsme u cílového docku!");
+            rkLedGreen(true); // Zapnutí zelené LED
         }
         
         //Naložení baterie do docku
@@ -291,61 +297,97 @@ void navigateToDock(int dockIndex) {
 
 //OVLÁDÍNÍ RAMENE
 
+class RamenoController {
+private:
+
+    int default_speed; // Výchozí rychlost pro serva
+
+public:
+
+    RamenoController() : default_speed(80) {}
+
+    int set_defaultSmartServosSpeed(float speed)    { return default_speed = speed; }
+
+    int get_defaultSmartServosSpeed() const{ return default_speed; }
+
+
+    void Magnet(bool on)            { if (on) { rkServosSetPosition(1, 90); } else { rkServosSetPosition(1, 0); } }    // 90 - drží baterii, 0 - pustí baterii
+    
+    void Up(float speed = 80)       { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 50, speed); }        // Rameno - nahoře
+
+    void Down(float speed = 80)     { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 120, speed); }       // Rameno - dole
+
+    void Active(float speed = 80)   { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 60, speed); }        // Rameno - nahoře - aktiv
+
+    void Left(float speed = 80)     { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 35, speed); }        // Rameno - levá
+
+    void Right(float speed = 80)    { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 215, speed); }       // Rameno - pravá
+
+    void Center(float speed = 80)   { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 125, speed); }       // Rameno - střed
+
     // Funkce pro naložení baterie na rameno
-void load_battery() {
-    auto &bus = rkSmartServoBus(2);
-    s_s_move(bus, 0, 50, 80.0);     // Rameno - nahoře
-    rkServosSetPosition(1, 90);     // Magnet servo drží
-    s_s_move(bus, 1, 215, 80.0);    // Rameno - levá
-    delay(5000);
-    s_s_move(bus, 0, 120, 80.0);    // Rameno - dole
-    delay(5000);
-    s_s_move(bus, 0, 60, 80.0);     // Rameno - nahoře - aktiv
-    delay(5000);
-}
+    void load_battery(int WaiterIndex, float speed = 80) {
+        Up(speed);
+        Magnet(true);
+        delay(WaiterIndex);
+        Left(speed);
+        delay(WaiterIndex);
+        Down(speed);
+        delay(WaiterIndex);
+        Active(speed);
+        delay(WaiterIndex);
+        Center(speed);
+    }
 
     // Funkce pro vyložení baterie z ramene
-void unload_battery(int dockIndex) {
-    auto &bus = rkSmartServoBus(2);
-    s_s_move(bus, 1, 35, 80.0);     // Rameno - pravá
-    delay(5000);
-    s_s_move(bus, 0, 120, 80.0);    // Rameno - dole
-    delay(5000);
-    rkServosSetPosition(1, 0);      // Magnet servo pouští
-    delay(5000);
-    s_s_move(bus, 0, 50, 80.0);     // Rameno - nahoře
-    delay(5000); 
-    rkServosSetPosition(1, 90);     // Magnet servo drží
-    s_s_move(bus, 1, 125, 80.0);    // Rameno - střed
-    
-    // Označení docku jako obsazený
-    manager.getDock(dockIndex).setStatus(Status::FILLED);
-}
+    void unload_battery(int dockIndex, int WaiterIndex, float speed = 80) {
+        Up(speed);
+        delay(WaiterIndex);
+        Right(speed);
+        delay(WaiterIndex);
+        Down(speed);
+        delay(WaiterIndex);
+        Magnet(false);
+        delay(WaiterIndex);
+        Up(speed);
+        delay(WaiterIndex); 
+        Magnet(true);
+        Center(speed);
+
+        // Označení docku jako obsazený
+        manager.getDock(dockIndex).setStatus(Status::FILLED);
+    }
 
     // Funkce pro naložení baterie a rovnou ji přesunout do docku
-void load_dock(int dockIndex) {
-    auto &bus = rkSmartServoBus(2);
-    s_s_move(bus, 0, 50, 80.0);     // Rameno - nahoře
-    rkServosSetPosition(1, 90);     // Magnet servo drží
-    s_s_move(bus, 1, 215, 80.0);    // Rameno - levá
-    delay(5000);
-    s_s_move(bus, 0, 120, 80.0);    // Rameno - dole
-    delay(5000);
-    s_s_move(bus, 0, 60, 80.0);     // Rameno - nahoře - aktiv
-    delay(5000);
-    s_s_move(bus, 1, 35, 80.0);     // Rameno - pravá
-    delay(5000);
-    s_s_move(bus, 0, 120, 80.0);    // Rameno - dole
-    delay(5000);
-    rkServosSetPosition(1, 0);      // Magnet servo pouští
-    delay(5000);
-    s_s_move(bus, 0, 50, 80.0);     // Rameno - nahoře
-    delay(5000); 
-    rkServosSetPosition(1, 90);     // Magnet servo drží
-    s_s_move(bus, 1, 125, 80.0);    // Rameno - střed
-    // Označení docku jako obsazený
-    manager.getDock(dockIndex).setStatus(Status::FILLED);
-}
+    void load_dock(int dockIndex, int WaiterIndex, float speed = 80) {
+        Up(speed);
+        Magnet(true);
+        delay(WaiterIndex);
+        Left(speed);
+        delay(WaiterIndex);
+        Down(speed);
+        delay(WaiterIndex);
+        Active(speed);
+        delay(WaiterIndex);
+        Right(speed);
+        delay(WaiterIndex);
+        Down(speed);
+        delay(WaiterIndex);
+        Magnet(false);
+        delay(WaiterIndex);
+        Up(speed);
+        delay(WaiterIndex); 
+        Magnet(true);
+        Center(speed);
+
+        // Označení docku jako obsazený
+        manager.getDock(dockIndex).setStatus(Status::FILLED);
+    }
+
+};
+
+// Globální instance RamenoController
+RamenoController Rameno;
 
 /*****************************************************************************************************************************/
 
@@ -409,20 +451,16 @@ void setup() {
     
     //Nastavení smart servos
     auto &bus = rkSmartServoBus(2);
-    //auto &bus = rkSmartServoBus(1);
-    s_s_init(bus, 1, 30, 220);
-    s_s_init(bus, 0, 40, 125);
+    s_s_init(bus, 1, 30, 220); // Servo 1   Min 30     Max 220
+    s_s_init(bus, 0, 40, 125); // Servo 0   Min 40     Max 125
 
     //Nastavení Pixy2 kamery
     pixy.init();
     pixy.changeProg("color_connected_components"); 
     printf("Pixy2 kamera inicializována!\n");
 
-    rkLedRed(true); 
-    rkLedBlue(true); 
-
     // Inicializace sledování pozice
-    positionTracker.initialize(0); // Startovní pozice 0 mm
+    positionTracker.initialize(); // Startovní pozice 0 mm
     
     // Nastavení absolutních pozic pro docks:
     manager.getDock(0).setAbsolutePos(800);
@@ -434,7 +472,16 @@ void setup() {
     manager.getDock(6).setAbsolutePos(1970);
     manager.getDock(7).setAbsolutePos(2165);
 
-
+    //Nastavení ramene do výchozí pozice
+    Rameno.Magnet(true); // Zapnutí magnetu
+    Rameno.set_defaultSmartServosSpeed(80); // Nastavení výchozí rychlosti pro serva
+    Rameno.Up();    // Rameno - nahoru
+    Rameno.Center(); // Rameno - střed
+    
+    rkLedRed(true); 
+    rkLedBlue(true); 
+    rkLedGreen(false);
+    rkLedYellow(false);
 
     //    Hledání nejbližšího prázdného docku k pozici 250
     // int nearest_empty = manager.findNearestEmptyDock(250);
@@ -456,35 +503,37 @@ void setup() {
 // Hlavní smyčka programu
 void loop() {
 
-  auto &bus = rkSmartServoBus(2);
-  //auto &bus = rkSmartServoBus(1);
-
   if (rkButtonIsPressed(BTN_UP)) {
-        load_dock(0);
+        Rameno.Up();
   }
   if (rkButtonIsPressed(BTN_DOWN)) {
-        s_s_move(bus, 0, 120, 80.0);    // Rameno - dole
+        Rameno.Down();
     }
   if (rkButtonIsPressed(BTN_ON)) {
-        move_straight_with_tracking(200, 40);   // pohyb vpřed s trackingem
-        move_straight_with_tracking(100, -40);  // pohyb vzad s trackingem
-        getRobotPosition(); // Získání aktuální pozice robota
-        printf("Aktuální pozice robota: %d mm\n", getRobotPosition());
+       // move_straight_with_tracking(1000, 40);  // pohyb vpřed s trackingem
+       Rameno.load_battery(3000);
   }
   if (rkButtonIsPressed(BTN_OFF)) {
-        navigateToDock(0);
+        //positionTracker.initialize(); // Inicializace pozice robota na 70 mm
+        // navigateToDock(0);
+        // Rameno.load_dock(0, 3000); // Naložení baterie na rameno
+        // navigateToDock(3);
+        // navigateToDock(1);
+        // navigateToDock(1);
+        Rameno.unload_battery(1, 3000); // Vyložení baterie z ramene do docku 1
+
   }
-  if ((digitalRead(Bbutton1) == LOW)){
+  if ((digitalRead(Bbutton1) == LOW)){ //Left button
         rkLedYellow(true); // Turn on red LED
         rkLedGreen(false); // Turn on red LED
 
-        s_s_move(bus, 1, 215, 80.0);    // Rameno - levá
+        Rameno.Left();
     }
-  if ((digitalRead(Bbutton2) == LOW)){
+  if ((digitalRead(Bbutton2) == LOW)){ //Right button 
         rkLedGreen(true); // Turn on red LED
         rkLedYellow(false); // Turn on red LED
 
-        s_s_move(bus, 1, 35, 80.0);     // Rameno - pravá
+        Rameno.Right();
     }
     // Pro jistotu, aby se cyklus neprováděl příliš rychle
   delay(50);

@@ -7,8 +7,8 @@
 static const uint8_t Bbutton1 = 34;
 static const uint8_t Bbutton2 = 35;
 const float roztec = 150.0; // roztec kol v mm
-const float odchylka_vzdalenosti = 2.20; // odchylka vzdálenosti v mm, kterou robotka používá pro výpočet průměru kola
-const float prumer_kola = odchylka_vzdalenosti * 65; // průměr kola v mm
+const float prumer_kola = 65; // průměr kola v mm
+const float korekce = 21.8181; // korekce pro převod z mm na encodery
 float  koeficient_turn = 1.030; // koeficient pro otáčení na místě
 
 float koeficient_r_f = 1.029;
@@ -51,8 +51,8 @@ void forward(float mm, float speed) {
 
     // Serial.printf("[FORWARD] Start M1_pos_start: %d, M4_pos_start: %d\n", M1_pos_start, M4_pos_start);
 
-    int M1_must_go = ((mm / (prumer_kola * 3.141592)) * 40.4124852f * 48.f) + M1_pos_start; // přepočet mm na encodery
-    int M4_must_go = ((mm / (prumer_kola * 3.141592)) * 40.4124852f * 48.f) + M4_pos_start;
+    int M1_must_go = ((mm / (prumer_kola * 3.141592)) * 40.4124852f * korekce) + M1_pos_start; // přepočet mm na encodery
+    int M4_must_go = ((mm / (prumer_kola * 3.141592)) * 40.4124852f * korekce) + M4_pos_start;
     // Serial.printf("[FORWARD] M1_must_go: %d, M4_must_go: %d\n", M1_must_go, M4_must_go);
 
     // Zrychlování
@@ -65,7 +65,7 @@ void forward(float mm, float speed) {
         man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) {
             M4_pos = info.position();
         });
-        man.motor(rb::MotorId::M1).power(-i * 0.80);
+        man.motor(rb::MotorId::M1).power(-i * 1.4);
         man.motor(rb::MotorId::M4).power(i + odhylaka * Kp + integral * Ki + (odhylaka - last_odchylka) * Kd);
         // Serial.printf("[ACCEL] i: %d | M1_pos: %d | M4_pos: %d | odchylka: %d | integral: %d\n", i, M1_pos, M4_pos, odhylaka, integral);
         delay(10);
@@ -95,7 +95,7 @@ void forward(float mm, float speed) {
         const int max_integral = 10000;
         if (integral >  max_integral) integral =  max_integral;
         if (integral < -max_integral) integral = -max_integral;
-        man.motor(rb::MotorId::M1).power(-target*0.80);
+        man.motor(rb::MotorId::M1).power(-target * 1.4);
         int rawPower = target + odhylaka * Kp + integral * Ki + (odhylaka - last_odchylka) * Kd;
         // saturace
         const int maxPower = 32000;
@@ -141,8 +141,8 @@ void forward(float mm, float speed) {
             // Serial.printf("[finishing] M1_pos: %d | M4_pos: %d | odchylka: %d | integral: %d\n", M1_pos, M4_pos, odhylaka, integral);
           }
         }
-        man.motor(rb::MotorId::M1).power(-i * 0.85);
-        man.motor(rb::MotorId::M4).power(i );
+        man.motor(rb::MotorId::M1).power(-i * 1.4);
+        man.motor(rb::MotorId::M4).power(i);
 
         // Serial.printf("[DECEL] i: %d | M1_pos: %d | M4_pos: %d | odchylka: %d | integral: %d\n", i, M1_pos, M4_pos, odhylaka, integral);
 

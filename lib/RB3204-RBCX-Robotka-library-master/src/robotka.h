@@ -56,7 +56,7 @@ struct rkPinsConfig {
  */
 struct rkConfig {
     rkConfig()
-        :  motor_id_left(4)
+        : motor_id_left(4)
         , motor_id_right(1)
         , motor_max_power_pct(100)
         , motor_polarity_switch_left(false)
