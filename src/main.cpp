@@ -5,6 +5,9 @@
 #include "motor_commands.h"
 #include "RBCXMotor.h"
 
+#include <thread>
+#include <functional>
+
 //Pixy2 kamera
 #include <Pixy2.h>
 #include <SPI.h>
@@ -293,7 +296,104 @@ void Check_PID(int power, int M1_pos, int M4_pos){
 int M4_pos = 0;
 int M1_pos = 0;
 
-void moveStraight_with_anotherTask(int distance, bool x, bool kladna = true){
+// void xxx(int distance, int speed){
+    
+
+//     rkMotorsDriveAsync(distance, distance, speed, speed, []() { Serial.println("Pohyb dokončen."); });
+
+//     rkMotorsGetPositionById(rb::MotorId::M1, [&](int pos) {
+//         M1_pos = pos;
+//         Serial.printf("M1 aktuální pozice: %d\n", M1_pos);
+//     });
+//         rkMotorsGetPositionById(rb::MotorId::M4, [&](int pos) {
+//         M1_pos = pos;
+//         Serial.printf("M1 aktuální pozice: %d\n", M1_pos);
+//     });
+// }
+
+struct MoveToDockArgs {
+    int dockIndex;
+    float maxSpeed;
+    std::function<void()> onArrived;
+};
+
+// Asynchronní pohybová funkce s callbackem po dokončení
+void moveToDockAsync(int dockIndex, float maxSpeed, std::function<void()> onArrived) {
+    // Vytvoříme nový FreeRTOS task
+    xTaskCreate(
+        [](void* param) {
+            MoveToDockArgs* args = static_cast<MoveToDockArgs*>(param);
+
+            int dockPos = manager.getDockAbsolutePosition(args->dockIndex);
+            int robotPos = positionTracker.getCurrentPosition();
+            int distance = dockPos - robotPos;
+            int direction = (distance >= 0) ? 1 : -1;
+            float absDistance = abs(distance);
+
+            // Parametry akcelerace/decelerace
+            float accel = 0.5f; // mm/ms^2 (nastav dle potřeby)
+            float decel = 0.5f; // mm/ms^2
+            float speed = 0;
+            float dt = 20; // ms, perioda smyčky
+
+            float traveled = 0;
+            bool enemyDetected = false;
+
+            // Zrychlování
+            while (speed < args->maxSpeed && traveled < absDistance/2) {
+                speed += accel * dt;
+                if (speed > args->maxSpeed) speed = args->maxSpeed;
+                float step = speed * dt / 1000.0f;
+                traveled += step;
+                positionTracker.updatePosition(direction * step);
+                setMotorsPower(direction * speed, direction * speed);
+
+                if (EmemyDetection()) { enemyDetected = true; break; }
+                vTaskDelay(dt / portTICK_PERIOD_MS);
+            }
+
+            // Konstantní rychlost
+            while (traveled < absDistance - 100 && !enemyDetected) { // 100 mm před cílem začni zpomalovat
+                float step = speed * dt / 1000.0f;
+                traveled += step;
+                positionTracker.updatePosition(direction * step);
+                setMotorsPower(direction * speed, direction * speed);
+
+                if (EmemyDetection()) { enemyDetected = true; break; }
+                vTaskDelay(dt / portTICK_PERIOD_MS);
+            }
+
+            // Zpomalení
+            while (speed > 0 && !enemyDetected) {
+                speed -= decel * dt;
+                if (speed < 0) speed = 0;
+                float step = speed * dt / 1000.0f;
+                traveled += step;
+                positionTracker.updatePosition(direction * step);
+                setMotorsPower(direction * speed, direction * speed);
+
+                if (EmemyDetection()) { enemyDetected = true; break; }
+                vTaskDelay(dt / portTICK_PERIOD_MS);
+            }
+
+            setMotorsPower(0, 0);
+
+            // Po dojetí/do zastavení
+            if (args->onArrived && !enemyDetected) args->onArrived();
+
+            delete args;
+            vTaskDelete(NULL);
+        },
+        "MoveToDockAsync",
+        4096,
+        
+        new MoveToDockArgs{dockIndex, maxSpeed, onArrived}, // ← zde použij pojmenovanou strukturu
+        1,
+        nullptr
+    );
+}
+
+void moveStraight_with_anotherTask(int distance){
     
     auto& man = rb::Manager::get(); // vytvoří referenci na man class
     
@@ -330,9 +430,7 @@ void moveStraight_with_anotherTask(int distance, bool x, bool kladna = true){
     Serial.printf("[ENCODERY] M4_pos: %d, M1_pos: %d\n", M4_pos, M1_pos);
 
     //Aktualizace pozice robota
-    if(kladna){ positionTracker.updatePosition(static_cast<int>(TicksToMm(M1_pos))); } 
-
-    else { positionTracker.updatePosition(static_cast<int>(-TicksToMm(M1_pos))); }
+    positionTracker.updatePosition(static_cast<int>(TicksToMm(M1_pos))); 
       
     //vTaskDelete(chytejPukyHandle);
     //chytejPukyHandle = NULL; // Uvolníme task, pokud běžel
@@ -444,7 +542,7 @@ public:
     
     void Up(float speed = 80)       { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 50, speed); }        // Rameno - nahoře
 
-    void Down(float speed = 80)     { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 120, speed); }       // Rameno - dole
+    void Down(float speed = 80)     { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 130, speed); }       // Rameno - dole
 
     void Active(float speed = 80)   { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 60, speed); }        // Rameno - nahoře - aktiv
 
@@ -473,6 +571,7 @@ public:
 
     // Funkce pro naložení baterie na rameno
     void load_battery(int WaiterIndex, float speed = 80) {
+        delay(100);
         Up(speed);
         Magnet(true);
         delay(WaiterIndex);
@@ -483,10 +582,12 @@ public:
         Active(speed);
         delay(WaiterIndex);
         Center(speed);
+        delay(WaiterIndex);
     }
 
     // Funkce pro vyložení baterie z ramene
     void unload_battery(int dockIndex, int WaiterIndex, float speed = 80) {
+        delay(100);
         Active(speed);
         delay(WaiterIndex);
         Right(speed);
@@ -507,6 +608,7 @@ public:
 
     // Funkce pro naložení baterie a rovnou ji přesunout do docku
     void load_dock(int dockIndex, int WaiterIndex, float speed = 80) {
+        delay(10);
         Up(speed);
         Magnet(true);
         delay(WaiterIndex);
@@ -517,11 +619,11 @@ public:
         Active(speed);
         delay(WaiterIndex);
         Right(speed);
-        delay(WaiterIndex);
+        delay(2 * WaiterIndex);
         Down(speed);
         delay(WaiterIndex);
         Magnet(false);
-        delay(WaiterIndex);
+        //delay(WaiterIndex);
         Up(speed);
         delay(WaiterIndex); 
         Magnet(true);
@@ -602,7 +704,7 @@ void setup() {
     //Nastavení smart servos
     auto &bus = rkSmartServoBus(2);
     s_s_init(bus, 1, 30, 220); // Servo 1   Min 30     Max 220
-    s_s_init(bus, 0, 40, 125); // Servo 0   Min 40     Max 125
+    s_s_init(bus, 0, 40, 135); // Servo 0   Min 40     Max 135
 
     //Nastavení Pixy2 kamery
     pixy.init();
@@ -652,13 +754,12 @@ void loop() {
 
 
 
-  if (rkButtonIsPressed(BTN_UP)) {
+    if (rkButtonIsPressed(BTN_UP)) {
     
-    s_s_move(bus, 0, pos, 10);
-    printf("Servo je na pozici %d\n", pos);//80
-    pos++;
-
-  }
+        moveToDockAsync(0, 40.0f, [](){
+            Serial.println("Robot dorazil k docku 0!");
+        });
+    }
   if (rkButtonIsPressed(BTN_DOWN)) {
         // move_straight_with_tracking(200, 40);
         // goToAbsolutePosition(0);
@@ -705,8 +806,9 @@ void loop() {
         // navigateToDock(3);
         // navigateToDock(1);
         // navigateToDock(1);
-        Rameno.unload_battery(1, 3000); // Vyložení baterie z ramene do docku 1
 
+
+        Rameno.load_dock(1, 1200, 100); // Naložení baterie do docku 1
   }
 
 
