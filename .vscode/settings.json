@@ -49,6 +49,7 @@
         "utility": "cpp",
         "typeinfo": "cpp",
         "random": "cpp",
-        "thread": "cpp"
+        "thread": "cpp",
+        "string": "cpp"
     }
 }
