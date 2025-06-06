@@ -862,6 +862,93 @@ void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)
     );
 }
 
+struct AbsMoveTask {
+    int targetPos;
+    float maxSpeed;
+    float accel;
+    std::function<void(bool)> onFinish;
+};
+
+void moveToAbsolutePositionAsync(int absTargetPos, float speed, std::function<void(bool)> callback) {
+    xTaskCreate(
+        [](void* params) {
+            struct {
+                int targetPos;
+                float maxSpeed;
+                float accel;
+                std::function<void(bool)> onFinish;
+            } *task = static_cast<decltype(task)>(params);
+
+            auto& man = rb::Manager::get();
+            int startPos = positionTracker.getCurrentPosition();
+            int distance = task->targetPos - startPos;
+            int direction = (distance > 0) ? 1 : -1;
+            distance = abs(distance);
+
+            man.motor(rb::MotorId::M1).setCurrentPosition(0);
+            man.motor(rb::MotorId::M4).setCurrentPosition(0);
+
+            float currentSpeed = 0;
+            float traveled = 0;
+            bool enemyDetected = false;
+
+            volatile int M1_pos = 0;
+            volatile int M4_pos = 0;
+
+            while (traveled < distance && !enemyDetected) {
+                man.motor(rb::MotorId::M1).requestInfo([&](rb::Motor& info) { M1_pos = abs(info.position()); });
+                man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) { M4_pos = abs(info.position()); });
+                vTaskDelay(10 / portTICK_PERIOD_MS);
+
+                float avgPos = (M1_pos + M4_pos) / 2.0f;
+                traveled = avgPos * (127.5 * PI) / (40.4124852f * 48.f);
+
+                int currentAbsolutePos = startPos + (direction * traveled);
+                positionTracker.updatePosition(currentAbsolutePos - positionTracker.getCurrentPosition());
+
+                float remainingDistance = distance - traveled;
+                if (currentSpeed < task->maxSpeed && remainingDistance > 200) {
+                    currentSpeed = std::min(currentSpeed + task->accel * 0.02f, task->maxSpeed);
+                } else if (remainingDistance < 200) {
+                    currentSpeed = std::max(currentSpeed - task->accel * 0.02f, 0.0f);
+                }
+
+                if (EnemyDetection()) {
+                    enemyDetected = true;
+                    break;
+                }
+
+                int odchylka = M1_pos - M4_pos;
+                int power = static_cast<int>(currentSpeed * 32000 / 100);
+
+                man.motor(rb::MotorId::M1).power(-direction * power * 0.92f);
+                int powerM4 = direction * power + odchylka * Kp;
+                powerM4 = constrain(powerM4, -32000, 32000);
+                man.motor(rb::MotorId::M4).power(powerM4);
+
+                vTaskDelay(20 / portTICK_PERIOD_MS);
+            }
+
+            man.motor(rb::MotorId::M1).power(0);
+            man.motor(rb::MotorId::M4).power(0);
+
+            positionTracker.updatePosition(task->targetPos - positionTracker.getCurrentPosition());
+
+            if (task->onFinish) {
+                task->onFinish(!enemyDetected);
+            }
+
+            delete task;
+            vTaskDelete(NULL);
+        },
+        "AbsMove",
+        4096,
+        new decltype(*((decltype(nullptr))nullptr)){absTargetPos, speed, speed / 2.0f, callback},
+        1,
+        nullptr
+    );
+}
+
 // void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)> callback) {
 //     NavigationTask* taskParams = new NavigationTask{
 //         .targetDockIndex = dockIndex,
@@ -1150,7 +1237,10 @@ void setup() {
     delay(1000); // Počkáme 1 sekundu, aby se vše inicializovalo
     //move.Straight(500, 2000, 5000, 0); 
     moveToDockAsync(0, 60.0f, [](bool success, Color color) {});
-    delay(1000); // Počkáme 1 sekundu, aby se vše inicializovalo
+    delay(5000); // Počkáme 1 sekundu, aby se vše inicializovalo
+
+
+    moveToAbsolutePositionAsync(0, 60.0f, [](bool success) {});
     //move.Stop(); // Zastavení robota
 
 }
