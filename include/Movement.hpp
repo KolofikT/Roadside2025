@@ -7,7 +7,7 @@
 
 // Funkce pro detekci soupeře pomocí ultrazvukové věže
 bool EnemyDetection() {
-
+    return false;
 }
 
 
