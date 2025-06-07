@@ -26,7 +26,7 @@ float koeficient_l_b = 1.032;
 
 //////////////////
 // Před funkcí:
-const float Kp = 55.0f;
+const float Kp = 65.0f;
 const float Ki = 0.01f;
 const float Kd = 0.1f;
 int a = 300; // koeficient zrychlovani
