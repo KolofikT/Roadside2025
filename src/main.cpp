@@ -850,7 +850,7 @@ void setup() {
     //Nastavení smart servos
     auto &bus = rkSmartServoBus(2);
     s_s_init(bus, 1, 30, 220); // Servo 1   Min 30     Max 220
-    s_s_init(bus, 0, 40, 135); // Servo 0   Min 40     Max 135
+    s_s_init(bus, 0, 30, 135); // Servo 0   Min 40     Max 135
 
     //Nastavení Pixy2 kamery
     pixy.init();
@@ -873,7 +873,7 @@ void setup() {
     //Nastavení ramene do výchozí pozice
     Rameno.Magnet(true); // Zapnutí magnetu
     Rameno.set_defaultSmartServosSpeed(80); // Nastavení výchozí rychlosti pro serva
-    Rameno.Up();    // Rameno - nahoru
+    s_s_soft_move(bus, 0, 30, 60);   // Start - Rameno - nahoru 
     Rameno.Center(); // Rameno - střed
     
     rkLedRed(false); // Vypnutí červené LED
@@ -922,8 +922,13 @@ void setup() {
         // delay(1000);
         // rkMotorsSetPower(0, 0);
 
-        moveToAbsolutePositionAsync(1000, 60.0f, [](bool success) {});
+        //moveToAbsolutePositionAsync(1000, 60.0f, [](bool success) {});
+        moveToDockAsync(1, 60.0f, [](bool success, Color color) {});
+
+
         delay(8000);
+
+        Rameno.load_dock(1, 1200, 100); // Naložení baterie do docku 1
         //moveToAbsolutePositionAsync(200, 60.0f, [](bool success) {});
 
 
