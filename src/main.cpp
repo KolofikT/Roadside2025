@@ -29,6 +29,7 @@
 /***********************************************************************************************************************/
 
 using namespace lx16a; // aby nebylo třeba to psát všude
+using namespace std::chrono_literals;
 
 /***********************************************************************************************************************/
 
@@ -255,6 +256,43 @@ DockManager manager;
 
 /***********************************************************************************************************************/
 
+// Enum pro vlastní barvy tlačítek nebo bloků
+enum class MyColor {
+    RED,
+    BLUE,
+    NON
+};
+
+MyColor myColor;
+
+class Robot{
+private:
+    MyColor myColor;
+
+public:
+    //Konstruktor
+    Robot(MyColor c = MyColor::RED)
+        : myColor(c) {}
+    
+    //Getery a settery
+    MyColor getColor() const    { return myColor;}
+    void setColor(MyColor c)    { myColor = c; }
+
+    std::string colorToString() const {
+        switch(myColor){
+            case MyColor::NON: return "NON";
+            case MyColor::RED: return "RED";
+            case MyColor::BLUE: return "BLUE";
+        }
+    }
+
+};
+
+Robot robot;
+
+/*****************************************************************************************************************************/
+
+
 // SLEDOVÁNÍ POZICE ROBOTA
 
 // Třída pro sledování aktuální pozice robota
@@ -350,9 +388,11 @@ void EnemyDetection() {
         distFront /=3;
         distBack /= 3;
 
+        Serial.printf("US Back AVG: %d\n", distBack);
+
 
         //if (distRight < 250 || distLeft < 250)
-        if(distBack < 250)
+        if(distBack < 600)
         {
             IsEnemy = true;
         }
@@ -380,6 +420,266 @@ void EnemyDetection() {
 /***********************************************************************************************************************/
 
 //POHYBY
+
+// const float korekceM1 = 0.94f;
+// const float korekceM4 = 0.94f; // korekce pro M2, pokud je potřeba
+
+// //void rkMotorsDriveAsync(float mmLeft, float mmRight, uint8_t speed_left, uint8_t speed_right, std::function<void()> callback = nullptr);
+
+// int Odchylka = 0, Integral = 0, Last_odchylka = 0;
+// void zkontroluj_pid(int power, int M1_pos, int M4_pos){
+//     int Max_integral = 1000;
+//     Odchylka = M1_pos - M4_pos;
+//     Integral += Odchylka;
+//     if (Integral >  Max_integral) Integral =  Max_integral;
+//     if (Integral < -Max_integral) Integral = -Max_integral;
+
+//     int correction = Odchylka * Kp + Integral * (Ki+2) + (Odchylka - Last_odchylka) * Kd;
+
+//     int basePower = power;
+//     int leftPower = basePower - correction;
+//     int rightPower = basePower + correction;
+
+//     const int maxPower = 32000;
+//     const int minPower = 800;
+
+//     leftPower = constrain(leftPower, -maxPower, maxPower);
+//     rightPower = constrain(rightPower, -maxPower, maxPower);
+
+//     // Minimální výkon pro lepší dojezd
+//     if (abs(leftPower) < minPower && leftPower != 0) leftPower = (leftPower > 0) ? minPower : -minPower;
+//     if (abs(rightPower) < minPower && rightPower != 0) rightPower = (rightPower > 0) ? minPower : -minPower;
+
+//     auto& man = rb::Manager::get();
+
+//     man.motor(rb::MotorId::M1).power(-leftPower * korekceM1);
+//     man.motor(rb::MotorId::M4).power(rightPower * korekceM4);
+
+//     Last_odchylka = Odchylka;
+// }
+
+// struct NavigationTask {
+//     int targetDockIndex;
+//     float maxSpeed;  // mm/s
+//     float accel;     // mm/s^2
+//     std::function<void(bool, Color)> onFinish;
+// };
+
+// void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)> callback) {
+//     struct NavigationTask {
+//         int targetDockIndex;
+//         float maxSpeed;  // mm/s
+//         float accel;     // mm/s^2
+//         std::function<void(bool, Color)> onFinish;
+//     };
+
+//     NavigationTask* taskParams = new NavigationTask{
+//         dockIndex,
+//         speed,
+//         speed / 2.0f,
+//         callback
+//     };
+
+//     xTaskCreate(
+//         [](void* params) {
+//             NavigationTask* task = static_cast<NavigationTask*>(params);
+//             auto& man = rb::Manager::get();
+
+//             int targetPos = manager.getDockAbsolutePosition(task->targetDockIndex);
+//             int startPos = positionTracker.getCurrentPosition();
+//             int distance = targetPos - startPos;
+//             int direction = (distance > 0) ? 1 : -1;
+//             distance = abs(distance);
+
+//             man.motor(rb::MotorId::M1).setCurrentPosition(0);
+//             man.motor(rb::MotorId::M4).setCurrentPosition(0);
+
+//             float currentSpeed = 0;
+//             float traveled = 0;
+//             bool enemyDetected = false;
+//             Color dockColor = Color::NON;
+
+//             volatile int M1_pos = 0;
+//             volatile int M4_pos = 0;
+
+//             while (traveled < distance && !enemyDetected) {
+//                 while (traveled < distance && !enemyDetected) {
+//                 // Asynchronní čtení pozic motorů
+//                 man.motor(rb::MotorId::M1).requestInfo([&](rb::Motor& info) { M1_pos = abs(info.position()); });
+//                 man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) { M4_pos = abs(info.position()); });
+
+//                 std::this_thread::sleep_for(8ms);
+
+//                 float avgPos = (M1_pos + M4_pos) / 2.0f;
+
+//                 //const float correction = 0.92f; // nebo 870.0/800.0
+//                 traveled = avgPos * (67 * PI) / (21.5467f * 48.f) / korekceM1;
+
+//                 Serial.printf("Ujeto: %.2f mm, Cílová pozice: %d mm\n", traveled, targetPos);
+
+//                 int currentAbsolutePos = startPos + (direction * traveled);
+//                 positionTracker.updatePosition(currentAbsolutePos - positionTracker.getCurrentPosition());
+
+//                 float remainingDistance = distance - traveled;
+
+//                 // Akcelerace/decelerace
+//                 if (currentSpeed < task->maxSpeed && remainingDistance > 200) {
+//                     currentSpeed = std::min(currentSpeed + task->accel * 0.02f, task->maxSpeed);
+//                 } else if (remainingDistance < 200) {
+//                     currentSpeed = std::max(currentSpeed - task->accel * 0.02f, 0.0f);
+//                 }
+
+//                 // Detekce soupeře
+//                 if (IsEnemy) {
+//                     enemyDetected = true;
+//                     break;
+//                 }
+
+//                 // Detekce barvy docku při přiblížení
+//                 if (remainingDistance < 150 && dockColor == Color::NON) {
+//                     pixy.ccc.getBlocks();
+//                     if (pixy.ccc.numBlocks > 0) {
+//                         dockColor = (pixy.ccc.blocks[0].m_signature == 1) ? Color::RED : 
+//                                    (pixy.ccc.blocks[0].m_signature == 2) ? Color::BLUE : Color::NON;
+//                     }
+//                 }
+
+//                 // PID řízení motorů pomocí tvé funkce
+//                 int power = static_cast<int>(currentSpeed * 32000 / 100);
+//                 zkontroluj_pid(direction * power, M1_pos, M4_pos);
+
+//                 vTaskDelay(20 / portTICK_PERIOD_MS);
+//                 }
+
+//                 while (IsEnemy) { vTaskDelay(100 / portTICK_PERIOD_MS); } // čekej, dokud není nepřítel detekován
+
+//             }
+
+//             man.motor(rb::MotorId::M1).power(0);
+//             man.motor(rb::MotorId::M4).power(0);
+
+//             positionTracker.updatePosition(targetPos - positionTracker.getCurrentPosition());
+
+//             if (task->onFinish) {
+//                 task->onFinish(!enemyDetected, dockColor);
+//             }
+
+//             delete task;
+//             vTaskDelete(NULL);
+//         },
+//         "DockNavigation",
+//         4096,
+//         taskParams,
+//         1,
+//         nullptr
+//     );
+// }
+
+
+
+// struct AbsMoveTask {
+//     int targetPos;
+//     float maxSpeed;
+//     float accel;
+//     std::function<void(bool)> onFinish;
+// };
+
+// void moveToAbsolutePositionAsync(int absTargetPos, float speed, std::function<void(bool)> callback) {
+//     struct AbsMoveTask {
+//         int targetPos;
+//         float maxSpeed;
+//         float accel;
+//         std::function<void(bool)> onFinish;
+//     };
+
+//     AbsMoveTask* taskParams = new AbsMoveTask{
+//         absTargetPos,
+//         speed,
+//         speed / 2.0f,
+//         callback
+//     };
+
+//     xTaskCreate(
+//         [](void* params) {
+//             AbsMoveTask* task = static_cast<AbsMoveTask*>(params);
+//             auto& man = rb::Manager::get();
+//             int startPos = positionTracker.getCurrentPosition();
+//             int distance = task->targetPos - startPos;
+//             int direction = (distance > 0) ? 1 : -1;
+//             distance = abs(distance);
+
+//             man.motor(rb::MotorId::M1).setCurrentPosition(0);
+//             man.motor(rb::MotorId::M4).setCurrentPosition(0);
+
+//             float currentSpeed = 0;
+//             float traveled = 0;
+//             bool enemyDetected = false;
+
+//             volatile int M1_pos = 0;
+//             volatile int M4_pos = 0;
+            
+//             //while (traveled < distance && !enemyDetected) {
+//                 while (traveled < distance && !enemyDetected) {
+//                     man.motor(rb::MotorId::M1).requestInfo([&](rb::Motor& info) { M1_pos = abs(info.position()); });
+//                     man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) { M4_pos = abs(info.position()); });
+
+//                     vTaskDelay(8 / portTICK_PERIOD_MS);
+
+//                     float avgPos = (M1_pos + M4_pos) / 2.0f;
+//                     traveled = avgPos * (67 * PI) / (21.5467f * 48.f) / korekceM1;
+
+//                     int currentAbsolutePos = startPos + (direction * traveled);
+//                     positionTracker.updatePosition(currentAbsolutePos - positionTracker.getCurrentPosition());
+
+//                     float remainingDistance = distance - traveled;
+
+//                     // Akcelerace/decelerace
+//                     if (currentSpeed < task->maxSpeed && remainingDistance > 200) {
+//                         currentSpeed = std::min(currentSpeed + task->accel * 0.02f, task->maxSpeed);
+//                     } else if (remainingDistance < 200) {
+//                         currentSpeed = std::max(currentSpeed - task->accel * 0.02f, 0.0f);
+//                     }
+
+//                     // Detekce soupeře
+//                     if (IsEnemy) {
+//                         enemyDetected = true;
+//                         break;
+//                     }
+
+//                     // PID řízení motorů pomocí tvé funkce
+//                     int power = static_cast<int>(currentSpeed * 32000 / 100);
+//                     zkontroluj_pid(direction * power, M1_pos, M4_pos);
+
+//                     vTaskDelay(20 / portTICK_PERIOD_MS);
+//                 }
+
+//             //     while (IsEnemy)
+//             //         vTaskDelay(100 / portTICK_PERIOD_MS); // čekej, dokud není nepřítel detekován
+
+//             // }
+
+//             man.motor(rb::MotorId::M1).power(0);
+//             man.motor(rb::MotorId::M4).power(0);
+
+//             positionTracker.updatePosition(task->targetPos - positionTracker.getCurrentPosition());
+
+//             if (task->onFinish) {
+//                 task->onFinish(!enemyDetected);
+//             }
+
+//             delete task;
+//             vTaskDelete(NULL);
+//         },
+//         "AbsMove",
+//         4096,
+//         taskParams,
+//         1,
+//         nullptr
+//     );
+// }
+
+
+//POHYBYAdd commentMore actions
 
 const float korekceM1 = 0.92f;
 const float korekceM4 = 0.92f; // korekce pro M2, pokud je potřeba
@@ -457,6 +757,7 @@ void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)
             bool enemyDetected = false;
             Color dockColor = Color::NON;
 
+            // Sdílené proměnné pro enkodéry
             volatile int M1_pos = 0;
             volatile int M4_pos = 0;
 
@@ -465,9 +766,11 @@ void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)
                 man.motor(rb::MotorId::M1).requestInfo([&](rb::Motor& info) { M1_pos = abs(info.position()); });
                 man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) { M4_pos = abs(info.position()); });
 
+                vTaskDelay(10 / portTICK_PERIOD_MS); // Dej callbackům čas
                 vTaskDelay(8 / portTICK_PERIOD_MS); // Dej callbackům čas
 
                 float avgPos = (M1_pos + M4_pos) / 2.0f;
+                traveled = avgPos * (127.5 * PI) / (40.4124852f * 48.f);
 
                 //const float correction = 0.92f; // nebo 870.0/800.0
                 traveled = avgPos * (67 * PI) / (21.5467f * 48.f) / korekceM1;
@@ -501,8 +804,15 @@ void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)
                     }
                 }
 
+                // PID řízení motorů
+                int odchylka = M1_pos - M4_pos;
                 // PID řízení motorů pomocí tvé funkce
                 int power = static_cast<int>(currentSpeed * 32000 / 100);
+
+                man.motor(rb::MotorId::M1).power(-direction * power * 0.92f);
+                int powerM4 = direction * power + odchylka * Kp;
+                powerM4 = constrain(powerM4, -32000, 32000);
+                man.motor(rb::MotorId::M4).power(powerM4);
                 zkontroluj_pid(direction * power, M1_pos, M4_pos);
 
                 vTaskDelay(20 / portTICK_PERIOD_MS);
@@ -574,10 +884,12 @@ void moveToAbsolutePositionAsync(int absTargetPos, float speed, std::function<vo
             while (traveled < distance && !enemyDetected) {
                 man.motor(rb::MotorId::M1).requestInfo([&](rb::Motor& info) { M1_pos = abs(info.position()); });
                 man.motor(rb::MotorId::M4).requestInfo([&](rb::Motor& info) { M4_pos = abs(info.position()); });
+                vTaskDelay(10 / portTICK_PERIOD_MS);
 
                 vTaskDelay(8 / portTICK_PERIOD_MS);
 
                 float avgPos = (M1_pos + M4_pos) / 2.0f;
+                traveled = avgPos * (127.5 * PI) / (40.4124852f * 48.f);
                 traveled = avgPos * (67 * PI) / (21.5467f * 48.f) / korekceM1;
 
                 int currentAbsolutePos = startPos + (direction * traveled);
@@ -598,8 +910,14 @@ void moveToAbsolutePositionAsync(int absTargetPos, float speed, std::function<vo
                     break;
                 }
 
+                int odchylka = M1_pos - M4_pos;
                 // PID řízení motorů pomocí tvé funkce
                 int power = static_cast<int>(currentSpeed * 32000 / 100);
+
+                man.motor(rb::MotorId::M1).power(-direction * power * 0.92f);
+                int powerM4 = direction * power + odchylka * Kp;
+                powerM4 = constrain(powerM4, -32000, 32000);
+                man.motor(rb::MotorId::M4).power(powerM4);
                 zkontroluj_pid(direction * power, M1_pos, M4_pos);
 
                 vTaskDelay(20 / portTICK_PERIOD_MS);
@@ -646,17 +964,41 @@ public:
 
     void Magnet(bool on)            { if (on) { rkServosSetPosition(1, 90); } else { rkServosSetPosition(1, 0); } }    // 90 - drží baterii, 0 - pustí baterii
     
-    void Up(float speed = 80)       { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 50, speed); }        // Rameno - nahoře
+    void Up(float speed = 80)       { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 85, speed); }        // Rameno - nahoře
 
     void Down(float speed = 80)     { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 130, speed); }       // Rameno - dole
 
-    void Active(float speed = 80)   { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 60, speed); }        // Rameno - nahoře - aktiv
+    void Active(float speed = 80)   { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 85, speed); }        // Rameno - nahoře - aktiv
 
+    
     void Left(float speed = 80)     { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 35, speed); }        // Rameno - levá
 
+    void LeftTakeBaterry(float speed = 80)     { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 35 + 10, speed); } //Když bereme baterii vlevo
+
+    void LeftSideTolerance(float speed = 80) {
+        auto &bus = rkSmartServoBus(2);
+        s_s_move(bus, 1, 45, speed/2);
+        delay(1000);
+        s_s_move(bus, 1, 25, speed/2);
+        delay(1000);
+    }
+
+    
     void Right(float speed = 80)    { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 215, speed); }       // Rameno - pravá
 
-    void Center(float speed = 80)   { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 125, speed); }       // Rameno - střed
+    void RightTakeBaterry(float speed = 80)    { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 215 - 10, speed); } //Když bereme baterii vpravo
+
+    void RightSideTolerance(float speed = 80) {
+        auto &bus = rkSmartServoBus(2);
+        s_s_move(bus, 1, 205, speed/2);
+        delay(1000);
+        s_s_move(bus, 1, 225, speed/2);
+        delay(1000);
+    }
+
+    
+    void Center(float speed = 80)   { auto &bus = rkSmartServoBus(2); s_s_move(bus, 1, 125, speed); }  
+    
 
     void getColorPosition(float speed = 80) { auto &bus = rkSmartServoBus(2); s_s_move(bus, 0, 80, speed); } 
         
@@ -685,6 +1027,7 @@ public:
         delay(WaiterIndex);
         Down(speed);
         delay(WaiterIndex);
+        LeftSideTolerance();
         Active(speed);
         delay(WaiterIndex);
         Center(speed);
@@ -713,18 +1056,33 @@ public:
     }
 
     // Funkce pro naložení baterie a rovnou ji přesunout do docku
-    void load_dock(int dockIndex, int WaiterIndex, float speed = 80) {
+    void load_dock(int dockIndex, MyColor c,  int WaiterIndex, float speed = 80) {
         delay(10);
         Up(speed);
         Magnet(true);
         delay(WaiterIndex);
-        Left(speed);
-        delay(WaiterIndex);
-        Down(speed);
-        delay(WaiterIndex);
-        Active(speed);
-        delay(WaiterIndex);
-        Right(speed);
+        if(c == MyColor::RED) {
+            RightTakeBaterry(speed);
+            delay(WaiterIndex);
+            Down(speed);
+            delay(WaiterIndex);
+            RightSideTolerance();
+            Active(speed);
+            delay(WaiterIndex);
+            Left(speed);
+        } else if (c == MyColor::BLUE) {
+            LeftTakeBaterry(speed);
+            delay(WaiterIndex);
+            Down(speed);
+            delay(WaiterIndex);
+            LeftSideTolerance();
+            Active(speed);
+            delay(WaiterIndex);
+            Right(speed);
+        } else {
+            Serial.println("Chyba: Neplatná barva pro naložení do docku.");
+            return;
+        }
         delay(2 * WaiterIndex);
         Down(speed);
         delay(WaiterIndex);
@@ -745,42 +1103,6 @@ public:
 // Globální instance RamenoController
 RamenoController Rameno;
 
-
-/*****************************************************************************************************************************/
-
-// Enum pro vlastní barvy tlačítek nebo bloků
-enum class MyColor {
-    RED,
-    BLUE,
-    NON
-};
-
-MyColor myColor;
-
-class Robot{
-private:
-    MyColor myColor;
-
-public:
-    //Konstruktor
-    Robot(MyColor c = MyColor::RED)
-        : myColor(c) {}
-    
-    //Getery a settery
-    MyColor getColor() const    { return myColor;}
-    void setColor(MyColor c)    { myColor = c; }
-
-    std::string colorToString() const {
-        switch(myColor){
-            case MyColor::NON: return "NON";
-            case MyColor::RED: return "RED";
-            case MyColor::BLUE: return "BLUE";
-        }
-    }
-
-};
-
-Robot robot;
 
 /*****************************************************************************************************************************/
 
@@ -826,6 +1148,10 @@ void CheckBattery()
     }
 }
 
+void nic(){
+    //nic
+}
+
 
 // Hlavní setup funkce
 // Inicializuje Robotku, nastaví piny a inicializuje docks
@@ -849,8 +1175,8 @@ void setup() {
     
     //Nastavení smart servos
     auto &bus = rkSmartServoBus(2);
-    s_s_init(bus, 1, 30, 220); // Servo 1   Min 30     Max 220
-    s_s_init(bus, 0, 30, 135); // Servo 0   Min 40     Max 135
+    s_s_init(bus, 1, 20, 230); // Servo 1   Min 30     Max 220
+    s_s_init(bus, 0, 80, 135); // Servo 0   Min 40     Max 135
 
     //Nastavení Pixy2 kamery
     pixy.init();
@@ -858,7 +1184,7 @@ void setup() {
     printf("Pixy2 kamera inicializována!\n");
 
     // Inicializace sledování pozice
-    positionTracker.initialize(); // Startovní pozice 0 mm
+    positionTracker.initialize(78); // Startovní pozice 0 mm
     
     // Nastavení absolutních pozic pro docks:
     manager.getDock(0).setAbsolutePos(800);
@@ -873,7 +1199,7 @@ void setup() {
     //Nastavení ramene do výchozí pozice
     Rameno.Magnet(true); // Zapnutí magnetu
     Rameno.set_defaultSmartServosSpeed(80); // Nastavení výchozí rychlosti pro serva
-    s_s_soft_move(bus, 0, 30, 60);   // Start - Rameno - nahoru 
+    s_s_soft_move(bus, 0, 80, 60);   // Start - Rameno - nahoru 
     Rameno.Center(); // Rameno - střed
     
     rkLedRed(false); // Vypnutí červené LED
@@ -889,8 +1215,12 @@ void setup() {
     //moveToAbsolutePositionAsync(0, 60.0f, [](bool success) {});
     //move.Stop(); // Zastavení robota
 
+int positM1 = 0, positM4 = 0;
+
     std::thread Ultrasonic(EnemyDetection); // Spustí detekci soupeře v samostatném vlákně
 
+    int posX = 80;
+    bool homoDock = false; //dock 3 ---- true dock 4
     while(true){
 
         //Nastaví LED podle barvy
@@ -908,27 +1238,83 @@ void setup() {
             delay(300);
         }
 
+        if(rkButtonLeft())  { homoDock = false; rkLedGreen(true); rkLedYellow(false);} // Levý --- dock 3 zelená led
+        if(rkButtonRight()) { homoDock = true; rkLedGreen(false); rkLedYellow(true);} // Pravý --- dock 4 žlutá led
+
+
         if(rkButtonOn()) { break; }
+
+        if(rkButtonDown()){
+
+            s_s_soft_move(bus, 0, posX, 10);
+            Serial.printf("Servo 0 je na: %d\n", posX);
+            posX++;
+        }
         delay(200); 
 
-        Serial.printf("Ultrazvuk: %d\n", GetUS(USid::BACK));
 
     }
+    // //         Výpis barvy za kterou jede robot
+    // // Serial.printf("Naše barva je: %s\n", robot.colorToString().c_str());
+
+    // // Přijede ke zdi
+    // // rkMotorsSetSpeed(-10, -10); // Pojede dozadu
+    // // delay(2500);
+    // // rkMotorsSetSpeed(0, 0);
+    // // delay(1000);
+
+    // // Výběr cílové pozice podle homoDock
+    // // int absTarget = homoDock ? 160 : 140;
+    // // Serial.printf("Aktuální pozice: %d mm, Cílová pozice: %d mm\n", positionTracker.getCurrentPosition(), absTarget);
+
+    // // moveToAbsolutePositionAsync(absTarget, 60.0f, [](bool success) {
+    // //     if (success) Serial.println("Pohyb dokončen.");
+    // //     else Serial.println("Pohyb přerušen kvůli soupeři.");
+    // // });
+
+    // // Čekání na dokončení pohybu nebo detekci soupeře
+    // // while (!IsEnemy) {
+    // //     positM1 = rb::Manager::get().motor(rb::MotorId::M1).position();
+    // //     positM4 = rb::Manager::get().motor(rb::MotorId::M4).position();
+    // //     delay(50);
+    // // }
+    // // rkMotorsSetSpeed(0, 0); // Zastaví motory, pokud je detekován soupeř
+
+    // // Naložení baterie do docku podle barvy
+    // // Rameno.load_dock(3, robot.getColor(), 1200, 100);
+
+    // // delay(1000);;
+
+    // // Ukončení vlákna detekce soupeře
+    // // Ultrasonic.join(); // Správné ukončení threadu
+
         //Vypíše barvu za kterou jede robot
         Serial.printf("Naše barva je: %s\n", robot.colorToString().c_str());
 
-        // //Přijede ke zdi
-        // rkMotorsSetPower(30, 30);
-        // delay(1000);
-        // rkMotorsSetPower(0, 0);
+        //Přijede ke zdi
+        rkMotorsSetSpeed(-10, -10); // Pojede dozadu
+        delay(2500);
+        rkMotorsSetSpeed(0, 0);
+
+        delay(1000);
 
         //moveToAbsolutePositionAsync(1000, 60.0f, [](bool success) {});
-        moveToDockAsync(1, 60.0f, [](bool success, Color color) {});
+        
+        
+        // if(homoDock)    { moveToAbsolutePositionAsync(160, 60.0f, [](bool success) {});} 
+        // else            { moveToAbsolutePositionAsync(140, 60.0f, [](bool success) {}); }
+        // if(homoDock)    { moveToAbsolutePositionAsync(1580, 60.0f, [](bool success) {});} 
+        // else            { moveToAbsolutePositionAsync(1400, 60.0f, [](bool success) {}); }
 
+        moveToAbsolutePositionAsync(1500, 60.0f, [](bool success) {});
+        //moveToDockAsync(3, 60.0f, [](bool success, Color color) {});
+        //moveToAbsolutePositionAsync(1385, 60, [](bool success) {});
 
-        delay(8000);
+        delay(11000);
 
-        Rameno.load_dock(1, 1200, 100); // Naložení baterie do docku 1
+        Rameno.load_dock(3,  robot.getColor(), 1200, 100); // Naložení baterie do docku 1 1200ms
+
+        delay(1000);
         //moveToAbsolutePositionAsync(200, 60.0f, [](bool success) {});
 
 
@@ -937,6 +1323,8 @@ void setup() {
 }
 /*****************************************************************************************************************************/
 /*****************************************************************************************************************************/
+
+
 
 // Hlavní smyčka programu
 void loop() {
