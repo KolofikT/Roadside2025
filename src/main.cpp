@@ -29,7 +29,10 @@
 /***********************************************************************************************************************/
 
 using namespace lx16a; // aby nebylo třeba to psát všude
+
 using namespace std::chrono_literals;
+
+//using DockCallback = std::function<void(bool, Color, Color, Color)>;
 
 /***********************************************************************************************************************/
 
@@ -38,8 +41,8 @@ auto &man = rb::Manager::get(); // vytvoří referenci
 /***********************************************************************************************************************/
 
     // Baterie:
-    //    Row1: 7ks   420mm výška 60mm (100mm i s kroužkem)
-    //    Row2: 7ks   420mm výška 60mm (100mm i s kroužkem)
+    //    Row1: 4ks   420mm výška 60mm (100mm i s kroužkem)
+    //    Row2: 4ks   420mm výška 60mm (100mm i s kroužkem)
     // 
     // Cesta:
     //    Šířka:  400mm
@@ -392,7 +395,7 @@ void EnemyDetection() {
 
 
         //if (distRight < 250 || distLeft < 250)
-        if(distBack < 600)
+        if(distBack < 0)//600
         {
             IsEnemy = true;
         }
@@ -720,16 +723,11 @@ struct NavigationTask {
     int targetDockIndex;
     float maxSpeed;  // mm/s
     float accel;     // mm/s^2
-    std::function<void(bool, Color)> onFinish;
+    std::function<void(bool, Color, Color, Color)> onFinish;
 };
 
-void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)> callback) {
-    struct NavigationTask {
-        int targetDockIndex;
-        float maxSpeed;  // mm/s
-        float accel;     // mm/s^2
-        std::function<void(bool, Color)> onFinish;
-    };
+
+void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color, Color, Color)> callback) {
 
     NavigationTask* taskParams = new NavigationTask{
         dockIndex,
@@ -755,11 +753,17 @@ void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)
             float currentSpeed = 0;
             float traveled = 0;
             bool enemyDetected = false;
-            Color dockColor = Color::NON;
+            Color dockColor0 = Color::NON;
+            Color dockColor1 = Color::NON;
+            Color dockColor2 = Color::NON;
 
             // Sdílené proměnné pro enkodéry
             volatile int M1_pos = 0;
             volatile int M4_pos = 0;
+
+            int PixyGetClor_Dock_0_Pos = manager.getDockAbsolutePosition(0) - 1;
+            int PixyGetClor_Dock_1_Pos = manager.getDockAbsolutePosition(1) - 1;
+            int PixyGetClor_Dock_2_Pos = manager.getDockAbsolutePosition(2) - 1;
 
             while (traveled < distance && !enemyDetected) {
                 // Asynchronní čtení pozic motorů
@@ -775,7 +779,7 @@ void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)
                 //const float correction = 0.92f; // nebo 870.0/800.0
                 traveled = avgPos * (67 * PI) / (21.5467f * 48.f) / korekceM1;
 
-                Serial.printf("Ujeto: %.2f mm, Cílová pozice: %d mm\n", traveled, targetPos);
+                //Serial.printf("Ujeto: %.2f mm, Cílová pozice: %d mm\n", traveled, targetPos);
 
                 int currentAbsolutePos = startPos + (direction * traveled);
                 positionTracker.updatePosition(currentAbsolutePos - positionTracker.getCurrentPosition());
@@ -795,12 +799,30 @@ void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)
                     break;
                 }
 
-                // Detekce barvy docku při přiblížení
-                if (remainingDistance < 150 && dockColor == Color::NON) {
+
+                // Detekce barvy docků 0, 1, 2 při přiblížení
+                if (abs(positionTracker.getCurrentPosition() - PixyGetClor_Dock_0_Pos) <= 20 && dockColor0 == Color::NON) {
+                    pixy.ccc.getBlocks();
+                    //Serial.printf("Barva je: %u", pixy.ccc.blocks[0].m_signature);
+                    if (pixy.ccc.numBlocks > 0) {
+                        dockColor0 = (pixy.ccc.blocks[0].m_signature == 1) ? Color::RED :
+                                    (pixy.ccc.blocks[0].m_signature == 2) ? Color::BLUE : Color::NON;
+                    }
+                }
+
+                if (abs(traveled - PixyGetClor_Dock_1_Pos) <= 20 && dockColor1 == Color::NON) {
                     pixy.ccc.getBlocks();
                     if (pixy.ccc.numBlocks > 0) {
-                        dockColor = (pixy.ccc.blocks[0].m_signature == 1) ? Color::RED : 
-                                   (pixy.ccc.blocks[0].m_signature == 2) ? Color::BLUE : Color::NON;
+                        dockColor1 = (pixy.ccc.blocks[0].m_signature == 1) ? Color::RED :
+                                    (pixy.ccc.blocks[0].m_signature == 2) ? Color::BLUE : Color::NON;
+                    }
+                }
+
+                if (abs(traveled - PixyGetClor_Dock_2_Pos) <= 20 && dockColor2 == Color::NON) {
+                    pixy.ccc.getBlocks();
+                    if (pixy.ccc.numBlocks > 0) {
+                        dockColor2 = (pixy.ccc.blocks[0].m_signature == 1) ? Color::RED :
+                                    (pixy.ccc.blocks[0].m_signature == 2) ? Color::BLUE : Color::NON;
                     }
                 }
 
@@ -823,10 +845,8 @@ void moveToDockAsync(int dockIndex, float speed, std::function<void(bool, Color)
 
             positionTracker.updatePosition(targetPos - positionTracker.getCurrentPosition());
 
-            if (task->onFinish) {
-                task->onFinish(!enemyDetected, dockColor);
-            }
-
+            if (task->onFinish) { task->onFinish(!enemyDetected, dockColor0, dockColor1, dockColor2); }
+            
             delete task;
             vTaskDelete(NULL);
         },
@@ -1153,6 +1173,33 @@ void nic(){
 }
 
 
+//Funkce pro určení všech barev doků pokud dostane barvy prvních 3 docků
+void setAllDockColorsSymmetric(Color color0, Color color1, Color color2) {
+    // Nejprve nastavíme docky 0-2
+    manager.getDock(0).setColor(color0);
+    manager.getDock(1).setColor(color1);
+    manager.getDock(2).setColor(color2);
+
+    // Určíme barvu docku 3 podle pravidla
+    Color color3;
+    if (color0 == color1 && color1 == color2 && color0 != Color::NON) {
+        color3 = (color0 == Color::RED) ? Color::BLUE : Color::RED;
+    } else {
+        color3 = Color::NON; // Pokud nejsou všechny stejné, nastavíme na NON nebo podle potřeby
+    }
+    manager.getDock(3).setColor(color3);
+
+    // Nastavíme zrcadlově docky 4-7
+    manager.getDock(4).setColor(manager.getDock(3).getColor());
+    manager.getDock(5).setColor(manager.getDock(2).getColor());
+    manager.getDock(6).setColor(manager.getDock(1).getColor());
+    manager.getDock(7).setColor(manager.getDock(0).getColor());
+    
+    // Vypíše barvy všech docků
+    for(int i = 0; i < 8; ++i) { Serial.printf("Barva docku %d: %s\n", i, (manager.getDock(i).getColor() == Color::RED ? "RED" : manager.getDock(i).getColor() == Color::BLUE ? "BLUE" : "NON")); }
+}
+
+
 // Hlavní setup funkce
 // Inicializuje Robotku, nastaví piny a inicializuje docks
 // Nastaví sledování pozice robota a inicializuje docks s jejich absolutními pozicemi
@@ -1184,7 +1231,7 @@ void setup() {
     printf("Pixy2 kamera inicializována!\n");
 
     // Inicializace sledování pozice
-    positionTracker.initialize(78); // Startovní pozice 0 mm
+    positionTracker.initialize(75 + 225); // Startovní pozice 0 mm
     
     // Nastavení absolutních pozic pro docks:
     manager.getDock(0).setAbsolutePos(800);
@@ -1254,39 +1301,6 @@ int positM1 = 0, positM4 = 0;
 
 
     }
-    // //         Výpis barvy za kterou jede robot
-    // // Serial.printf("Naše barva je: %s\n", robot.colorToString().c_str());
-
-    // // Přijede ke zdi
-    // // rkMotorsSetSpeed(-10, -10); // Pojede dozadu
-    // // delay(2500);
-    // // rkMotorsSetSpeed(0, 0);
-    // // delay(1000);
-
-    // // Výběr cílové pozice podle homoDock
-    // // int absTarget = homoDock ? 160 : 140;
-    // // Serial.printf("Aktuální pozice: %d mm, Cílová pozice: %d mm\n", positionTracker.getCurrentPosition(), absTarget);
-
-    // // moveToAbsolutePositionAsync(absTarget, 60.0f, [](bool success) {
-    // //     if (success) Serial.println("Pohyb dokončen.");
-    // //     else Serial.println("Pohyb přerušen kvůli soupeři.");
-    // // });
-
-    // // Čekání na dokončení pohybu nebo detekci soupeře
-    // // while (!IsEnemy) {
-    // //     positM1 = rb::Manager::get().motor(rb::MotorId::M1).position();
-    // //     positM4 = rb::Manager::get().motor(rb::MotorId::M4).position();
-    // //     delay(50);
-    // // }
-    // // rkMotorsSetSpeed(0, 0); // Zastaví motory, pokud je detekován soupeř
-
-    // // Naložení baterie do docku podle barvy
-    // // Rameno.load_dock(3, robot.getColor(), 1200, 100);
-
-    // // delay(1000);;
-
-    // // Ukončení vlákna detekce soupeře
-    // // Ultrasonic.join(); // Správné ukončení threadu
 
         //Vypíše barvu za kterou jede robot
         Serial.printf("Naše barva je: %s\n", robot.colorToString().c_str());
@@ -1306,13 +1320,44 @@ int positM1 = 0, positM4 = 0;
         // if(homoDock)    { moveToAbsolutePositionAsync(1580, 60.0f, [](bool success) {});} 
         // else            { moveToAbsolutePositionAsync(1400, 60.0f, [](bool success) {}); }
 
-        moveToAbsolutePositionAsync(1500, 60.0f, [](bool success) {});
+        //Jede k docku 3 a během cesty zjišťuje barvy docků 0, 1, 2 a z těch pak nastaví barvy docků 3, 4, 5, 6, 7
+        moveToDockAsync(7, 60.0f, [](bool success, Color color0, Color color1, Color color2) { 
+        
+            if (success) { Serial.println("Úspěšně dorazili k docku!"); } 
+            else { Serial.println("Detekován soupeř při cestě k docku."); }
+
+            //Nastaví barvy všech docků a vypíše je
+            setAllDockColorsSymmetric(color0, color1, color2); 
+        } );
+
+
+
+        //manager.findNearestEmptyDock(positionTracker.getCurrentPosition());
+        
+        //moveToAbsolutePositionAsync(1500, 60.0f, [](bool success) {});
+        
+        
+
+
+        //manager.getDock(index).getColor();
+
+
+
         //moveToDockAsync(3, 60.0f, [](bool success, Color color) {});
         //moveToAbsolutePositionAsync(1385, 60, [](bool success) {});
 
         delay(11000);
 
-        Rameno.load_dock(3,  robot.getColor(), 1200, 100); // Naložení baterie do docku 1 1200ms
+                moveToDockAsync(3, 60.0f, [](bool success, Color color0, Color color1, Color color2) { 
+        
+            if (success) { Serial.println("Úspěšně dorazili k docku!"); } 
+            else { Serial.println("Detekován soupeř při cestě k docku."); }
+
+            //Nastaví barvy všech docků a vypíše je
+            setAllDockColorsSymmetric(color0, color1, color2); 
+        } );
+
+        //Rameno.load_dock(7,  robot.getColor(), 1200, 100); // Naložení baterie do docku 1 1200ms
 
         delay(1000);
         //moveToAbsolutePositionAsync(200, 60.0f, [](bool success) {});
@@ -1322,88 +1367,12 @@ int positM1 = 0, positM4 = 0;
         Ultrasonic.detach(); // Uvolní vlákno detekce soupeře
 }
 /*****************************************************************************************************************************/
+// moveToDockAsync(3, 60.0f, [](bool success, Color c0, Color c1, Color c2) {
+//     // zde můžeš zpracovat výsledek a barvy
+// });
 /*****************************************************************************************************************************/
 
 
 
 // Hlavní smyčka programu
-void loop() {
-
-    
-
-
-        // //Left button BLUE // Nastavení barvy na modrou
-        // if ((digitalRead(Bbutton1) == LOW)) { myColor = BLUE; }
-    
-        // //Right button RED // Nastavení barvy na červenou
-        // if ((digitalRead(Bbutton2) == LOW)) { myColor = RED; }  
-
-
-//     if (rkButtonIsPressed(BTN_UP)) {
-    
-//         // moveToDockAsync(0, 60.0f, [](bool success, Color color) {
-//         //     if (success) {
-//         //         Serial.println("Úspěšně dorazili k docku 0!");
-//         //         rkLedGreen(true); // Zapnutí zelené LED
-//         //     } else {
-//         //         Serial.println("Detekován soupeř při cestě k docku 0.");
-//         //         rkLedRed(true); // Zapnutí červené LED
-//         //     }
-//         //     //Serial.printf("Barva docku: %s\n", (color).c_str());
-//         // });
-//     }
-//   if (rkButtonIsPressed(BTN_DOWN)) {
-//         // move_straight_with_tracking(200, 40);
-//         // goToAbsolutePosition(0);
-//         printf("Kouká se\n");
-//         pixy.ccc.getBlocks();               // Získání bloků z Pixy2 kamery
-//         printf("Počet Blocků %d inicializováno\n", pixy.ccc.numBlocks);
-
-//         printf("Počet bloků: %d\n", pixy.ccc.numBlocks); // Výpis počtu detekovaných bloků
-
-//         if(pixy.ccc.blocks[0].m_signature == 1) { // Pokud je blok červený
-//             printf("Červený blok detekován!\n");
-//             // Zde můžete přidat další logiku pro zpracování červeného bloku
-//         } else if(pixy.ccc.blocks[0].m_signature == 2) { // Pokud je blok modrý
-//             printf("Modrý blok detekován!\n");
-//             // Zde můžete přidat další logiku pro zpracování modrého bloku
-//         } else {
-//             printf("Blok s jinou barvou detekován!\n");
-//         }
-
-
-
-//         // pixy.ccc.blocks[i].m_signature;     // Barva bloku (1 = červená, 2 = modrá, atd.)
-
-//         // Procházení detekovaných bloků a jejich výpis
-//         // if (pixy.ccc.numBlocks > 0) {
-//         //     for (int i = 0; i < pixy.ccc.numBlocks; i++) {
-//         //         Serial.printf("Block %d: X=%d, Y=%d, Width=%d, Height=%d, Signature=%d\n", 
-//         //                       i, pixy.ccc.blocks[i].m_x, pixy.ccc.blocks[i].m_y, 
-//         //                       pixy.ccc.blocks[i].m_width, pixy.ccc.blocks[i].m_height, 
-//         //                       pixy.ccc.blocks[i].m_signature);
-//         //     }
-//         // } else {
-//         //     Serial.println("Žádné bloky nebyly detekovány.");
-//         // }
-//     }
-//   if (rkButtonIsPressed(BTN_ON)) {
-//     // move_straight_with_tracking(1000, 40);  // pohyb vpřed s trackingem
-//     //    Rameno.load_battery(3000);
-//   }
-//   if (rkButtonIsPressed(BTN_OFF)) {
-//         //positionTracker.initialize(); // Inicializace pozice robota na 70 mm
-//         // navigateToDock(0);
-//         // Rameno.load_dock(0, 3000); // Naložení baterie na rameno
-//         // navigateToDock(3);
-//         // navigateToDock(1);
-//         // navigateToDock(1);
-
-
-//         Rameno.load_dock(1, 1200, 100); // Naložení baterie do docku 1
-//   }
-
-
-//     // Pro jistotu, aby se cyklus neprováděl příliš rychle
-//   delay(50);
-}
+void loop() {}
